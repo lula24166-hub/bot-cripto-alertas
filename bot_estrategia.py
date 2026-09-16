@@ -37,13 +37,22 @@ def obtener_top_monedas():
         return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
 
 def obtener_datos(simbolo, intervalo, limite):
-    url = f"https://api.binance.com/api/v3/klines?symbol={simbolo}&interval={intervalo}&limit={limite}"
-    respuesta = requests.get(url).json()
-    df = pd.DataFrame(respuesta, columns=['tiempo', 'apertura', 'maximo', 'minimo', 'cierre', 'volumen', 'cierre_tiempo', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
-    df['cierre'] = df['cierre'].astype(float)
-    df['maximo'] = df['maximo'].astype(float)
-    df['minimo'] = df['minimo'].astype(float)
-    return df
+    try:
+        url = f"https://api.binance.com/api/v3/klines?symbol={simbolo}&interval={intervalo}&limit={limite}"
+        respuesta = requests.get(url).json()
+        
+        # ESCUDO 1: Si Binance nos manda un error en vez de las velas
+        if isinstance(respuesta, dict) and 'msg' in respuesta:
+            print(f"⚠️ Binance bloqueó la conexión temporalmente: {respuesta['msg']}")
+            return None # Retornamos nulo para que la matemática no se estrelle
+            
+        df = pd.DataFrame(respuesta, columns=['tiempo', 'apertura', 'maximo', 'minimo', 'cierre', 'volumen', 'cierre_tiempo', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+        df['cierre'] = df['cierre'].astype(float)
+        df['maximo'] = df['maximo'].astype(float)
+        df['minimo'] = df['minimo'].astype(float)
+        return df
+    except Exception as e:
+        return None
 
 def vigilar_operacion(simbolo, direccion, precio_entrada, tp, sl):
     print(f"👀 Vigilando {simbolo} en {direccion}...")
@@ -76,35 +85,45 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, tp, sl):
     enviar_telegram(mensaje)
     print(f"✅ Operación terminada.")
 
-# --- EL CEREBRO: ESTRATEGIA MULTI-ADX (COPIA DE TRADER PRO) ---
 def analizar_mercado(simbolo):
     try:
         # 1. FILTRO 4 HORAS (Tendencia Macro)
         df_4h = obtener_datos(simbolo, "4h", 100)
+        # ESCUDO 2: Si la tabla está vacía, saltamos a la siguiente moneda
+        if df_4h is None or len(df_4h) < 20: return False 
+        
         adx_4h_ind = ADXIndicator(high=df_4h['maximo'], low=df_4h['minimo'], close=df_4h['cierre'], window=14)
         adx_4h = adx_4h_ind.adx().iloc[-2]
         di_pos_4h = adx_4h_ind.adx_pos().iloc[-2]
         di_neg_4h = adx_4h_ind.adx_neg().iloc[-2]
 
         tendencia_4h = "NEUTRAL"
-        if adx_4h > 20: # Exigimos fuerza mayor a 20
+        if adx_4h > 15: 
             if di_pos_4h > di_neg_4h: tendencia_4h = "ALCISTA"
             elif di_neg_4h > di_pos_4h: tendencia_4h = "BAJISTA"
 
+        time.sleep(1) # ESCUDO 3: Un respiro de 1 segundo para no hacer enojar a Binance
+        
         # 2. FILTRO 1 HORA (Confirmación)
         df_1h = obtener_datos(simbolo, "1h", 100)
+        if df_1h is None or len(df_1h) < 20: return False
+        
         adx_1h_ind = ADXIndicator(high=df_1h['maximo'], low=df_1h['minimo'], close=df_1h['cierre'], window=14)
         adx_1h = adx_1h_ind.adx().iloc[-2]
         di_pos_1h = adx_1h_ind.adx_pos().iloc[-2]
         di_neg_1h = adx_1h_ind.adx_neg().iloc[-2]
 
         tendencia_1h = "NEUTRAL"
-        if adx_1h > 20:
+        if adx_1h > 15:
             if di_pos_1h > di_neg_1h: tendencia_1h = "ALCISTA"
             elif di_neg_1h > di_pos_1h: tendencia_1h = "BAJISTA"
+            
+        time.sleep(1) # ESCUDO 3: Otro respiro
 
         # 3. GATILLO 5 MINUTOS y ATR
         df_5m = obtener_datos(simbolo, "5m", 100)
+        if df_5m is None or len(df_5m) < 20: return False
+        
         adx_5m_ind = ADXIndicator(high=df_5m['maximo'], low=df_5m['minimo'], close=df_5m['cierre'], window=14)
         adx_5m = adx_5m_ind.adx().iloc[-2]
         di_pos_5m = adx_5m_ind.adx_pos().iloc[-2]
@@ -116,10 +135,10 @@ def analizar_mercado(simbolo):
         atr_actual = atr_ind.average_true_range().iloc[-1]
         precio_actual = df_5m.iloc[-1]['cierre']
 
-        print(f"📊 {simbolo} | 4H: {tendencia_4h} ({round(adx_4h,1)}) | 1H: {tendencia_1h} ({round(adx_1h,1)}) | Gatillo 5M: {round(adx_5m,1)}")
+        print(f"📊 {simbolo} | 4H: {tendencia_4h} ({round(adx_4h,1)}) | 1H: {tendencia_1h} ({round(adx_1h,1)}) | 5M: {round(adx_5m,1)}")
 
-        # ESTRATEGIA LONG 🟢 (Triple Alineación)
-        if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 25 and di_pos_5m > di_neg_5m and rsi_5m > 50:
+        # ESTRATEGIA LONG 🟢 
+        if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 20 and di_pos_5m > di_neg_5m and rsi_5m > 50:
             sl = round(precio_actual - (atr_actual * 1.5), 4)
             tp = round(precio_actual + (atr_actual * 3.0), 4)
             
@@ -128,8 +147,8 @@ def analizar_mercado(simbolo):
             vigilar_operacion(simbolo, "LONG", precio_actual, tp, sl)
             return True
 
-        # ESTRATEGIA SHORT 🔴 (Triple Alineación)
-        elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 25 and di_neg_5m > di_pos_5m and rsi_5m < 50:
+        # ESTRATEGIA SHORT 🔴 
+        elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 20 and di_neg_5m > di_pos_5m and rsi_5m < 50:
             sl = round(precio_actual + (atr_actual * 1.5), 4)
             tp = round(precio_actual - (atr_actual * 3.0), 4)
             
@@ -144,7 +163,7 @@ def analizar_mercado(simbolo):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot con Estrategia Multi-ADX de 4H y 1H...")
+print("🚀 Iniciando Bot con Estrategia Multi-ADX (Protección Anti-Baneo)...")
 while True:
     try:
         top_monedas = obtener_top_monedas()
@@ -155,7 +174,7 @@ while True:
                 print("⏳ Pausa de 30 segundos tras cerrar la operación...")
                 time.sleep(30)
                 break
-            time.sleep(2)
+            time.sleep(5) # ESCUDO 4: Pausa más larga (5s) entre monedas
     except Exception as e:
         print(f"Error en bucle principal: {e}")
         time.sleep(10)

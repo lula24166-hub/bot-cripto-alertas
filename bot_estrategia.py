@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import time
-from ta.trend import ADXIndicator, MACD, EMAIndicator
+from ta.trend import ADXIndicator
 from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
 
@@ -21,7 +21,6 @@ def enviar_telegram(mensaje):
     requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje})
 
 def obtener_top_monedas():
-    print("🔍 Escaneando Binance para encontrar las monedas con más volumen...")
     try:
         url = "https://api.binance.com/api/v3/ticker/24hr"
         respuesta = requests.get(url).json()
@@ -35,9 +34,8 @@ def obtener_top_monedas():
                 break
         return top_monedas
     except:
-        return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"] # Respaldo
+        return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
 
-# Función mejorada para pedir distintos intervalos (1h y 5m)
 def obtener_datos(simbolo, intervalo, limite):
     url = f"https://api.binance.com/api/v3/klines?symbol={simbolo}&interval={intervalo}&limit={limite}"
     respuesta = requests.get(url).json()
@@ -74,58 +72,68 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, tp, sl):
         except:
             time.sleep(3)
 
-    mensaje = f"{estado}\n🚀 Nuestro Alertador PRO detectó {simbolo} {direccion}\n\n📈 ROI: {round(roi, 2)}%\nEntrada: {precio_entrada} ➔ Precio Final: {precio_actual}\n\n{emoji}"
+    mensaje = f"{estado}\n🚀 Estrategia DOBLE ADX en {simbolo}\nDirección: {direccion}\n\n📈 ROI: {round(roi, 2)}%\nEntrada: {precio_entrada} ➔ Precio Final: {precio_actual}\n\n{emoji}"
     enviar_telegram(mensaje)
     print(f"✅ Operación terminada.")
 
-# --- EL NUEVO CEREBRO PROFESIONAL ---
+# --- EL CEREBRO: ESTRATEGIA MULTI-ADX (COPIA DE TRADER PRO) ---
 def analizar_mercado(simbolo):
     try:
-        # 1. ANÁLISIS MACRO (Gráfico de 1 Hora)
-        df_1h = obtener_datos(simbolo, "1h", 250)
-        df_1h['ema_200'] = EMAIndicator(close=df_1h['cierre'], window=200).ema_indicator()
-        precio_1h = df_1h.iloc[-1]['cierre']
-        ema_200 = df_1h.iloc[-1]['ema_200']
-        
-        tendencia_macro = "ALCISTA" if precio_1h > ema_200 else "BAJISTA"
+        # 1. FILTRO 4 HORAS (Tendencia Macro)
+        df_4h = obtener_datos(simbolo, "4h", 100)
+        adx_4h_ind = ADXIndicator(high=df_4h['maximo'], low=df_4h['minimo'], close=df_4h['cierre'], window=14)
+        adx_4h = adx_4h_ind.adx().iloc[-2]
+        di_pos_4h = adx_4h_ind.adx_pos().iloc[-2]
+        di_neg_4h = adx_4h_ind.adx_neg().iloc[-2]
 
-        # 2. ANÁLISIS MICRO Y GATILLO (Gráfico de 5 Minutos)
+        tendencia_4h = "NEUTRAL"
+        if adx_4h > 20: # Exigimos fuerza mayor a 20
+            if di_pos_4h > di_neg_4h: tendencia_4h = "ALCISTA"
+            elif di_neg_4h > di_pos_4h: tendencia_4h = "BAJISTA"
+
+        # 2. FILTRO 1 HORA (Confirmación)
+        df_1h = obtener_datos(simbolo, "1h", 100)
+        adx_1h_ind = ADXIndicator(high=df_1h['maximo'], low=df_1h['minimo'], close=df_1h['cierre'], window=14)
+        adx_1h = adx_1h_ind.adx().iloc[-2]
+        di_pos_1h = adx_1h_ind.adx_pos().iloc[-2]
+        di_neg_1h = adx_1h_ind.adx_neg().iloc[-2]
+
+        tendencia_1h = "NEUTRAL"
+        if adx_1h > 20:
+            if di_pos_1h > di_neg_1h: tendencia_1h = "ALCISTA"
+            elif di_neg_1h > di_pos_1h: tendencia_1h = "BAJISTA"
+
+        # 3. GATILLO 5 MINUTOS y ATR
         df_5m = obtener_datos(simbolo, "5m", 100)
+        adx_5m_ind = ADXIndicator(high=df_5m['maximo'], low=df_5m['minimo'], close=df_5m['cierre'], window=14)
+        adx_5m = adx_5m_ind.adx().iloc[-2]
+        di_pos_5m = adx_5m_ind.adx_pos().iloc[-2]
+        di_neg_5m = adx_5m_ind.adx_neg().iloc[-2]
         
-        adx_ind = ADXIndicator(high=df_5m['maximo'], low=df_5m['minimo'], close=df_5m['cierre'], window=14)
-        df_5m['adx'] = adx_ind.adx()
-        df_5m['+di'] = adx_ind.adx_pos()
-        df_5m['-di'] = adx_ind.adx_neg()
+        rsi_5m = RSIIndicator(close=df_5m['cierre'], window=14).rsi().iloc[-2]
         
-        df_5m['rsi'] = RSIIndicator(close=df_5m['cierre'], window=14).rsi()
-        df_5m['macd_hist'] = MACD(close=df_5m['cierre']).macd_diff()
-        
-        # Calcular el ATR para el Stop Loss Dinámico
         atr_ind = AverageTrueRange(high=df_5m['maximo'], low=df_5m['minimo'], close=df_5m['cierre'], window=14)
-        df_5m['atr'] = atr_ind.average_true_range()
-        
-        vela = df_5m.iloc[-2] 
+        atr_actual = atr_ind.average_true_range().iloc[-1]
         precio_actual = df_5m.iloc[-1]['cierre']
-        atr_actual = df_5m.iloc[-1]['atr']
-        
-        print(f"📊 {simbolo} | Macro 1H: {tendencia_macro} | ADX: {round(vela['adx'],1)} | RSI: {round(vela['rsi'],1)}")
 
-        # ESTRATEGIA LONG 🟢 (Solo si la Macro es Alcista)
-        if tendencia_macro == "ALCISTA" and vela['adx'] > 25 and vela['+di'] > vela['-di'] and vela['rsi'] > 55 and vela['macd_hist'] > 0:
-            sl = round(precio_actual - (atr_actual * 1.5), 4) # Stop Loss a 1.5 veces el ATR
-            tp = round(precio_actual + (atr_actual * 3.0), 4) # Take Profit al doble del SL (Ratio 1:2)
+        print(f"📊 {simbolo} | 4H: {tendencia_4h} ({round(adx_4h,1)}) | 1H: {tendencia_1h} ({round(adx_1h,1)}) | Gatillo 5M: {round(adx_5m,1)}")
+
+        # ESTRATEGIA LONG 🟢 (Triple Alineación)
+        if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 25 and di_pos_5m > di_neg_5m and rsi_5m > 50:
+            sl = round(precio_actual - (atr_actual * 1.5), 4)
+            tp = round(precio_actual + (atr_actual * 3.0), 4)
             
-            mensaje = f"🚨 SEÑAL INSTITUCIONAL 🚨\n\nMoneda: #{simbolo}\nDirección: LONG 🟢\nFiltro 1H: Aprobado ✅\n\n📌 Entrada: {precio_actual}\n🎯 TP: {tp}\n🛑 SL: {sl}"
+            mensaje = f"🚨 SEÑAL INSTITUCIONAL (DOBLE ADX) 🚨\n\nMoneda: #{simbolo}\nDirección: LONG 🟢\nFuerza 4H: Aprobado ✅\nFuerza 1H: Aprobado ✅\n\n📌 Entrada: {precio_actual}\n🎯 TP: {tp}\n🛑 SL: {sl}"
             enviar_telegram(mensaje)
             vigilar_operacion(simbolo, "LONG", precio_actual, tp, sl)
             return True
 
-        # ESTRATEGIA SHORT 🔴 (Solo si la Macro es Bajista)
-        elif tendencia_macro == "BAJISTA" and vela['adx'] > 25 and vela['-di'] > vela['+di'] and vela['rsi'] < 45 and vela['macd_hist'] < 0:
+        # ESTRATEGIA SHORT 🔴 (Triple Alineación)
+        elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 25 and di_neg_5m > di_pos_5m and rsi_5m < 50:
             sl = round(precio_actual + (atr_actual * 1.5), 4)
             tp = round(precio_actual - (atr_actual * 3.0), 4)
             
-            mensaje = f"🚨 SEÑAL INSTITUCIONAL 🚨\n\nMoneda: #{simbolo}\nDirección: SHORT 🔴\nFiltro 1H: Aprobado ✅\n\n📌 Entrada: {precio_actual}\n🎯 TP: {tp}\n🛑 SL: {sl}"
+            mensaje = f"🚨 SEÑAL INSTITUCIONAL (DOBLE ADX) 🚨\n\nMoneda: #{simbolo}\nDirección: SHORT 🔴\nFuerza 4H: Aprobado ✅\nFuerza 1H: Aprobado ✅\n\n📌 Entrada: {precio_actual}\n🎯 TP: {tp}\n🛑 SL: {sl}"
             enviar_telegram(mensaje)
             vigilar_operacion(simbolo, "SHORT", precio_actual, tp, sl)
             return True
@@ -136,11 +144,10 @@ def analizar_mercado(simbolo):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot Quant PRO (EMA 200 + ADX + ATR)...")
+print("🚀 Iniciando Bot con Estrategia Multi-ADX de 4H y 1H...")
 while True:
     try:
         top_monedas = obtener_top_monedas()
-        print(f"\n🏆 Top monedas: {top_monedas}")
         
         for moneda in top_monedas:
             hubo_operacion = analizar_mercado(moneda)

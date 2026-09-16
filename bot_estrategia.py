@@ -11,8 +11,8 @@ from keep_alive import keep_alive
 keep_alive()
 # --------------------------------------
 
-# 🔑 --- TUS LLAVES DE BINANCE (TESTNET) --- 🔑
-# Reemplaza los textos entre comillas con las llaves que sacaste
+# 🔑 --- TUS LLAVES DE BINANCE (TESTNET FUTUROS) --- 🔑
+# ⚠️ CREA UNAS NUEVAS Y PÉGALAS AQUÍ. NUNCA LAS COMPARTAS.
 API_KEY = "CUajXosd9bq1RGmWPIXlFjVU7mCHozGrgzPYM5hb6IaJA7eH5M7OmPzazQ12AGWO"
 API_SECRET = "X9AqzMJWVzw47ZeQjajbylT3QU0UVBYMmWZYvNGh3AdcPNbpyXBlpUp4gKZ3JBpV"
 
@@ -22,7 +22,7 @@ CHAT_ID = "-1003634379653"
 
 # --- CONFIGURACIÓN DE TRADING ---
 APALANCAMIENTO = 20
-INVERSION_USD = 20  # Dólares (margen) que usará por cada operación
+INVERSION_USD = 20  # Dólares que usará por cada operación
 CANTIDAD_MONEDAS = 5
 
 # --- CONECTAR BOT A BINANCE SIMULADOR ---
@@ -32,46 +32,43 @@ exchange = ccxt.binance({
     'enableRateLimit': True,
     'options': {'defaultType': 'future'}
 })
-exchange.set_sandbox_mode(True) # ¡SÚPER IMPORTANTE! Esto lo mantiene en dinero de mentira
+exchange.set_sandbox_mode(True) 
 
 def enviar_telegram(mensaje):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje})
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje})
+    except:
+        pass
 
 def ejecutar_apertura(simbolo, direccion, precio_actual):
     try:
         simbolo_ccxt = simbolo.replace("USDT", "/USDT")
-        
-        # 1. Configurar apalancamiento
         exchange.set_leverage(APALANCAMIENTO, simbolo_ccxt)
         
-        # 2. Calcular cuántas monedas comprar matemáticamente
         tamano_posicion_usd = INVERSION_USD * APALANCAMIENTO
         cantidad_monedas = tamano_posicion_usd / precio_actual
         
-        # Redondear según las reglas exactas de Binance
         exchange.load_markets()
         cantidad_final = float(exchange.amount_to_precision(simbolo_ccxt, cantidad_monedas))
         
-        # 3. Lanzar la orden al mercado
         side = 'buy' if direccion == "LONG" else 'sell'
         print(f"⚙️ Binance: Abriendo operación {direccion} en {simbolo_ccxt}...")
         exchange.create_market_order(simbolo_ccxt, side, cantidad_final)
         
         return cantidad_final
     except Exception as e:
-        print(f"❌ Error al abrir orden en Binance: {e}")
+        print(f"❌ Error al abrir orden: {e}")
         return 0
 
 def ejecutar_cierre(simbolo, direccion, cantidad_final):
     try:
         simbolo_ccxt = simbolo.replace("USDT", "/USDT")
-        # Para cerrar, hacemos una orden contraria
         side = 'sell' if direccion == "LONG" else 'buy'
         print(f"⚙️ Binance: Cerrando operación {direccion} en {simbolo_ccxt}...")
         exchange.create_market_order(simbolo_ccxt, side, cantidad_final)
     except Exception as e:
-        print(f"❌ Error al cerrar orden en Binance: {e}")
+        print(f"❌ Error al cerrar orden: {e}")
 
 def obtener_top_monedas():
     try:
@@ -93,8 +90,7 @@ def obtener_datos(simbolo, intervalo, limite):
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={simbolo}&interval={intervalo}&limit={limite}"
         respuesta = requests.get(url).json()
-        if isinstance(respuesta, dict) and 'msg' in respuesta:
-            return None
+        if isinstance(respuesta, dict) and 'msg' in respuesta: return None
         df = pd.DataFrame(respuesta, columns=['tiempo', 'apertura', 'maximo', 'minimo', 'cierre', 'volumen', 'cierre_tiempo', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
         df['cierre'] = df['cierre'].astype(float)
         df['maximo'] = df['maximo'].astype(float)
@@ -103,39 +99,77 @@ def obtener_datos(simbolo, intervalo, limite):
     except:
         return None
 
-def vigilar_operacion(simbolo, direccion, precio_entrada, tp, sl, cantidad_comprada):
-    print(f"👀 Bot Auto-Trading vigilando {simbolo}...")
+# --- EL NUEVO VIGILANTE CON TRAILING STOP DE 3 FASES ---
+def vigilar_operacion(simbolo, direccion, precio_entrada, tp1, tp2, tp3, sl_inicial, cantidad_comprada):
+    print(f"👀 Bot Auto-Trading vigilando {simbolo} (Estrategia 3 Fases)...")
+    
+    fase = 0  
+    sl_actual = sl_inicial
+
     while True:
         try:
             precio_actual = float(requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={simbolo}").json()['price'])
             
+            # --- LÓGICA PARA LONG 🟢 ---
             if direccion == "LONG":
                 roi = ((precio_actual - precio_entrada) / precio_entrada) * APALANCAMIENTO * 100
-                if precio_actual >= tp:
-                    estado, emoji = "💥 TAKE PROFIT ALCANZADO 💥", "🎯🔥"
+                
+                if fase == 0 and precio_actual >= tp1:
+                    sl_actual = precio_entrada
+                    fase = 1
+                    enviar_telegram(f"✅ {simbolo} alcanzó TP1 ({tp1})\n🛡 SL movido a Precio de Entrada (Riesgo Cero).")
+                
+                elif fase == 1 and precio_actual >= tp2:
+                    sl_actual = tp1
+                    fase = 2
+                    enviar_telegram(f"🔥 {simbolo} alcanzó TP2 ({tp2})\n💰 SL movido a TP1 (Ganancia Asegurada).")
+                
+                elif precio_actual >= tp3:
+                    estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
                     break
-                elif precio_actual <= sl:
-                    estado, emoji = "❌ STOP LOSS ALCANZADO ❌", "🛑"
+                
+                elif precio_actual <= sl_actual:
+                    if fase == 0:
+                        estado, emoji = "❌ STOP LOSS TOCADO ❌", "🛑"
+                    else:
+                        estado, emoji = "🛡 TRAILING STOP TOCADO (Salida Segura) 🛡", "✅"
                     break
-            
+
+            # --- LÓGICA PARA SHORT 🔴 ---
             elif direccion == "SHORT":
                 roi = ((precio_entrada - precio_actual) / precio_entrada) * APALANCAMIENTO * 100
-                if precio_actual <= tp:
-                    estado, emoji = "💥 TAKE PROFIT ALCANZADO 💥", "🎯🔥"
+                
+                if fase == 0 and precio_actual <= tp1:
+                    sl_actual = precio_entrada
+                    fase = 1
+                    enviar_telegram(f"✅ {simbolo} alcanzó TP1 ({tp1})\n🛡 SL movido a Precio de Entrada (Riesgo Cero).")
+                
+                elif fase == 1 and precio_actual <= tp2:
+                    sl_actual = tp1
+                    fase = 2
+                    enviar_telegram(f"🔥 {simbolo} alcanzó TP2 ({tp2})\n💰 SL movido a TP1 (Ganancia Asegurada).")
+                
+                elif precio_actual <= tp3:
+                    estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
                     break
-                elif precio_actual >= sl:
-                    estado, emoji = "❌ STOP LOSS ALCANZADO ❌", "🛑"
+                
+                elif precio_actual >= sl_actual:
+                    if fase == 0:
+                        estado, emoji = "❌ STOP LOSS TOCADO ❌", "🛑"
+                    else:
+                        estado, emoji = "🛡 TRAILING STOP TOCADO (Salida Segura) 🛡", "✅"
                     break
+
             time.sleep(3)
-        except:
+        except Exception as e:
             time.sleep(3)
 
-    # 1. CIERRA LA OPERACIÓN EN BINANCE AUTOMÁTICAMENTE
+    # 1. Cierra en Binance
     if cantidad_comprada > 0:
         ejecutar_cierre(simbolo, direccion, cantidad_comprada)
 
-    # 2. MANDA EL REPORTE A TELEGRAM
-    mensaje = f"{estado}\n🤖 AUTO-TRADING CERRADO: {simbolo}\n\n📈 PnL (Ganancia/Pérdida): {round(roi, 2)}%\nEntrada: {precio_entrada} ➔ Precio Final: {precio_actual}\n\n{emoji}"
+    # 2. Reporte Final
+    mensaje = f"{estado}\n🤖 AUTO-TRADING CERRADO: {simbolo}\n\n📈 PnL Aprox: {round(roi, 2)}%\nEntrada: {precio_entrada} ➔ Precio Salida: {precio_actual}\n\n{emoji}"
     enviar_telegram(mensaje)
     print(f"✅ Auto-Trade finalizado.")
 
@@ -172,35 +206,35 @@ def analizar_mercado(simbolo):
         # 🟢 GATILLO LONG
         if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 20 and di_pos_5m > di_neg_5m and rsi_5m > 50:
             sl = round(precio_actual - (atr_actual * 1.5), 4)
-            tp = round(precio_actual + (atr_actual * 3.0), 4)
+            tp1 = round(precio_actual + (atr_actual * 1.5), 4)
+            tp2 = round(precio_actual + (atr_actual * 3.0), 4)
+            tp3 = round(precio_actual + (atr_actual * 4.5), 4)
             
-            # 1. Abre operación en Binance
             cantidad_comprada = ejecutar_apertura(simbolo, "LONG", precio_actual)
-            
-            # 2. Avisa a Telegram
             estado_api = "✅ COMPRA AUTOMÁTICA EN BINANCE" if cantidad_comprada > 0 else "⚠️ ERROR AL COMPRAR EN BINANCE"
-            mensaje = f"🚨 ALERTA AUTO-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: LONG 🟢\n{estado_api}\n\n📌 Entrada Aprox: {precio_actual}\n🎯 TP: {tp}\n🛑 SL: {sl}"
+            mensaje = f"🚨 ALERTA AUTO-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: LONG 🟢\n{estado_api}\n\n📌 Entrada: {precio_actual}\n🎯 TP1: {tp1} | TP2: {tp2} | TP3: {tp3}\n🛑 SL Inicial: {sl}"
             enviar_telegram(mensaje)
             
-            # 3. Se queda vigilando para cerrar
-            vigilar_operacion(simbolo, "LONG", precio_actual, tp, sl, cantidad_comprada)
+            # EL FIX: Solo se queda vigilando si la orden se ejecutó correctamente
+            if cantidad_comprada > 0:
+                vigilar_operacion(simbolo, "LONG", precio_actual, tp1, tp2, tp3, sl, cantidad_comprada)
             return True
 
         # 🔴 GATILLO SHORT
         elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 20 and di_neg_5m > di_pos_5m and rsi_5m < 50:
             sl = round(precio_actual + (atr_actual * 1.5), 4)
-            tp = round(precio_actual - (atr_actual * 3.0), 4)
+            tp1 = round(precio_actual - (atr_actual * 1.5), 4)
+            tp2 = round(precio_actual - (atr_actual * 3.0), 4)
+            tp3 = round(precio_actual - (atr_actual * 4.5), 4)
             
-            # 1. Abre operación en Binance
             cantidad_comprada = ejecutar_apertura(simbolo, "SHORT", precio_actual)
-            
-            # 2. Avisa a Telegram
             estado_api = "✅ VENTA AUTOMÁTICA EN BINANCE" if cantidad_comprada > 0 else "⚠️ ERROR AL VENDER EN BINANCE"
-            mensaje = f"🚨 ALERTA AUTO-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: SHORT 🔴\n{estado_api}\n\n📌 Entrada Aprox: {precio_actual}\n🎯 TP: {tp}\n🛑 SL: {sl}"
+            mensaje = f"🚨 ALERTA AUTO-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: SHORT 🔴\n{estado_api}\n\n📌 Entrada: {precio_actual}\n🎯 TP1: {tp1} | TP2: {tp2} | TP3: {tp3}\n🛑 SL Inicial: {sl}"
             enviar_telegram(mensaje)
             
-            # 3. Se queda vigilando para cerrar
-            vigilar_operacion(simbolo, "SHORT", precio_actual, tp, sl, cantidad_comprada)
+            # EL FIX: Solo se queda vigilando si la orden se ejecutó correctamente
+            if cantidad_comprada > 0:
+                vigilar_operacion(simbolo, "SHORT", precio_actual, tp1, tp2, tp3, sl, cantidad_comprada)
             return True
 
         return False
@@ -209,14 +243,14 @@ def analizar_mercado(simbolo):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot Cuántico de AUTO-TRADING (Binance Testnet)...")
+print("🚀 Iniciando Bot con Trailing Stop por Niveles (Testnet)...")
 while True:
     try:
         top_monedas = obtener_top_monedas()
         for moneda in top_monedas:
             hubo_operacion = analizar_mercado(moneda)
             if hubo_operacion:
-                print("⏳ Pausa de 30 segundos tras cerrar el Auto-Trade...")
+                print("⏳ Pausa tras cerrar Auto-Trade (o fallo)...")
                 time.sleep(30)
                 break
             time.sleep(5) 

@@ -13,8 +13,8 @@ keep_alive()
 
 # 🔑 --- TUS LLAVES DE BINANCE (TESTNET) --- 🔑
 # Reemplaza los textos entre comillas con las llaves que sacaste
-API_KEY = "krLEJBxHeEshmgZDziMYz5vcGLFXRkc8Lg648qodMJhZ5EhhdUhG1B8rRxIy38SY"
-API_SECRET = "ZTh6kigjhMN04Gxr87gZit0vsrobstDqawfXfKsOfZeB2y89hyshn7b6LietuxMm"
+API_KEY = "CUajXosd9bq1RGmWPIXlFjVU7mCHozGrgzPYM5hb6IaJA7eH5M7OmPzazQ12AGWO"
+API_SECRET = "X9AqzMJWVzw47ZeQjajbylT3QU0UVBYMmWZYvNGh3AdcPNbpyXBlpUp4gKZ3JBpV"
 
 # --- CONFIGURACIÓN TELEGRAM ---
 TOKEN = "8624275801:AAHIyiTiofLOZJdZfhwww58kx88m940_l9c"

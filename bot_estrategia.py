@@ -1,7 +1,6 @@
 import requests
 import pandas as pd
 import time
-import ccxt
 from ta.trend import ADXIndicator
 from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
@@ -11,28 +10,14 @@ from keep_alive import keep_alive
 keep_alive()
 # --------------------------------------
 
-# 🔑 --- TUS LLAVES DE BINANCE (TESTNET FUTUROS) --- 🔑
-# ⚠️ CREA UNAS NUEVAS Y PÉGALAS AQUÍ. NUNCA LAS COMPARTAS.
-API_KEY = "CUajXosd9bq1RGmWPIXlFjVU7mCHozGrgzPYM5hb6IaJA7eH5M7OmPzazQ12AGWO"
-API_SECRET = "X9AqzMJWVzw47ZeQjajbylT3QU0UVBYMmWZYvNGh3AdcPNbpyXBlpUp4gKZ3JBpV"
-
 # --- CONFIGURACIÓN TELEGRAM ---
 TOKEN = "8624275801:AAHIyiTiofLOZJdZfhwww58kx88m940_l9c"
 CHAT_ID = "-1003634379653"
 
-# --- CONFIGURACIÓN DE TRADING ---
+# --- CONFIGURACIÓN DE TRADING SIMULADO (PAPER TRADING) ---
 APALANCAMIENTO = 20
-INVERSION_USD = 20  # Dólares que usará por cada operación
+INVERSION_USD = 20  # Dólares virtuales que usará por operación
 CANTIDAD_MONEDAS = 5
-
-# --- CONECTAR BOT A BINANCE SIMULADOR ---
-exchange = ccxt.binance({
-    'apiKey': API_KEY,
-    'secret': API_SECRET,
-    'enableRateLimit': True,
-    'options': {'defaultType': 'future'}
-})
-exchange.set_sandbox_mode(True) 
 
 def enviar_telegram(mensaje):
     try:
@@ -41,34 +26,15 @@ def enviar_telegram(mensaje):
     except:
         pass
 
+# --- FUNCIONES DE SIMULACIÓN (PAPER TRADING) ---
 def ejecutar_apertura(simbolo, direccion, precio_actual):
-    try:
-        simbolo_ccxt = simbolo.replace("USDT", "/USDT")
-        exchange.set_leverage(APALANCAMIENTO, simbolo_ccxt)
-        
-        tamano_posicion_usd = INVERSION_USD * APALANCAMIENTO
-        cantidad_monedas = tamano_posicion_usd / precio_actual
-        
-        exchange.load_markets()
-        cantidad_final = float(exchange.amount_to_precision(simbolo_ccxt, cantidad_monedas))
-        
-        side = 'buy' if direccion == "LONG" else 'sell'
-        print(f"⚙️ Binance: Abriendo operación {direccion} en {simbolo_ccxt}...")
-        exchange.create_market_order(simbolo_ccxt, side, cantidad_final)
-        
-        return cantidad_final
-    except Exception as e:
-        print(f"❌ Error al abrir orden: {e}")
-        return 0
+    tamano_posicion_usd = INVERSION_USD * APALANCAMIENTO
+    cantidad_monedas = tamano_posicion_usd / precio_actual
+    print(f"⚙️ SIMULADOR: Abriendo operación {direccion} virtual en {simbolo} por ${tamano_posicion_usd}...")
+    return cantidad_monedas
 
 def ejecutar_cierre(simbolo, direccion, cantidad_final):
-    try:
-        simbolo_ccxt = simbolo.replace("USDT", "/USDT")
-        side = 'sell' if direccion == "LONG" else 'buy'
-        print(f"⚙️ Binance: Cerrando operación {direccion} en {simbolo_ccxt}...")
-        exchange.create_market_order(simbolo_ccxt, side, cantidad_final)
-    except Exception as e:
-        print(f"❌ Error al cerrar orden: {e}")
+    print(f"⚙️ SIMULADOR: Cerrando operación {direccion} en {simbolo}. Registrando ganancias...")
 
 def obtener_top_monedas():
     try:
@@ -99,9 +65,9 @@ def obtener_datos(simbolo, intervalo, limite):
     except:
         return None
 
-# --- EL NUEVO VIGILANTE CON TRAILING STOP DE 3 FASES ---
+# --- EL VIGILANTE CON TRAILING STOP (SIMULADO) ---
 def vigilar_operacion(simbolo, direccion, precio_entrada, tp1, tp2, tp3, sl_inicial, cantidad_comprada):
-    print(f"👀 Bot Auto-Trading vigilando {simbolo} (Estrategia 3 Fases)...")
+    print(f"👀 Bot Simulador vigilando {simbolo} (Estrategia 3 Fases)...")
     
     fase = 0  
     sl_actual = sl_inicial
@@ -117,12 +83,12 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, tp1, tp2, tp3, sl_inic
                 if fase == 0 and precio_actual >= tp1:
                     sl_actual = precio_entrada
                     fase = 1
-                    enviar_telegram(f"✅ {simbolo} alcanzó TP1 ({tp1})\n🛡 SL movido a Precio de Entrada (Riesgo Cero).")
+                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({tp1})\n🛡 SL movido a Precio de Entrada.")
                 
                 elif fase == 1 and precio_actual >= tp2:
                     sl_actual = tp1
                     fase = 2
-                    enviar_telegram(f"🔥 {simbolo} alcanzó TP2 ({tp2})\n💰 SL movido a TP1 (Ganancia Asegurada).")
+                    enviar_telegram(f"🔥 SIMULADOR: {simbolo} alcanzó TP2 ({tp2})\n💰 SL movido a TP1.")
                 
                 elif precio_actual >= tp3:
                     estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
@@ -142,12 +108,12 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, tp1, tp2, tp3, sl_inic
                 if fase == 0 and precio_actual <= tp1:
                     sl_actual = precio_entrada
                     fase = 1
-                    enviar_telegram(f"✅ {simbolo} alcanzó TP1 ({tp1})\n🛡 SL movido a Precio de Entrada (Riesgo Cero).")
+                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({tp1})\n🛡 SL movido a Precio de Entrada.")
                 
                 elif fase == 1 and precio_actual <= tp2:
                     sl_actual = tp1
                     fase = 2
-                    enviar_telegram(f"🔥 {simbolo} alcanzó TP2 ({tp2})\n💰 SL movido a TP1 (Ganancia Asegurada).")
+                    enviar_telegram(f"🔥 SIMULADOR: {simbolo} alcanzó TP2 ({tp2})\n💰 SL movido a TP1.")
                 
                 elif precio_actual <= tp3:
                     estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
@@ -164,14 +130,14 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, tp1, tp2, tp3, sl_inic
         except Exception as e:
             time.sleep(3)
 
-    # 1. Cierra en Binance
-    if cantidad_comprada > 0:
-        ejecutar_cierre(simbolo, direccion, cantidad_comprada)
+    # 1. Cierre Simulado
+    ejecutar_cierre(simbolo, direccion, cantidad_comprada)
+    ganancia_usd = round(INVERSION_USD * (roi / 100), 2)
 
     # 2. Reporte Final
-    mensaje = f"{estado}\n🤖 AUTO-TRADING CERRADO: {simbolo}\n\n📈 PnL Aprox: {round(roi, 2)}%\nEntrada: {precio_entrada} ➔ Precio Salida: {precio_actual}\n\n{emoji}"
+    mensaje = f"{estado}\n🤖 PAPER TRADING CERRADO: {simbolo}\n\n📈 PnL: {round(roi, 2)}%\n💵 Ganancia/Pérdida Aprox: ${ganancia_usd} USD\nEntrada: {precio_entrada} ➔ Precio Salida: {precio_actual}\n\n{emoji}"
     enviar_telegram(mensaje)
-    print(f"✅ Auto-Trade finalizado.")
+    print(f"✅ Auto-Trade Simulado finalizado.")
 
 def analizar_mercado(simbolo):
     try:
@@ -211,13 +177,10 @@ def analizar_mercado(simbolo):
             tp3 = round(precio_actual + (atr_actual * 4.5), 4)
             
             cantidad_comprada = ejecutar_apertura(simbolo, "LONG", precio_actual)
-            estado_api = "✅ COMPRA AUTOMÁTICA EN BINANCE" if cantidad_comprada > 0 else "⚠️ ERROR AL COMPRAR EN BINANCE"
-            mensaje = f"🚨 ALERTA AUTO-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: LONG 🟢\n{estado_api}\n\n📌 Entrada: {precio_actual}\n🎯 TP1: {tp1} | TP2: {tp2} | TP3: {tp3}\n🛑 SL Inicial: {sl}"
-            enviar_telegram(mensaje)
             
-            # EL FIX: Solo se queda vigilando si la orden se ejecutó correctamente
-            if cantidad_comprada > 0:
-                vigilar_operacion(simbolo, "LONG", precio_actual, tp1, tp2, tp3, sl, cantidad_comprada)
+            mensaje = f"🚨 ALERTA PAPER-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: LONG 🟢\n✅ Simulación Exitosa\n\n📌 Entrada: {precio_actual}\n🎯 TP1: {tp1} | TP2: {tp2} | TP3: {tp3}\n🛑 SL Inicial: {sl}"
+            enviar_telegram(mensaje)
+            vigilar_operacion(simbolo, "LONG", precio_actual, tp1, tp2, tp3, sl, cantidad_comprada)
             return True
 
         # 🔴 GATILLO SHORT
@@ -228,13 +191,10 @@ def analizar_mercado(simbolo):
             tp3 = round(precio_actual - (atr_actual * 4.5), 4)
             
             cantidad_comprada = ejecutar_apertura(simbolo, "SHORT", precio_actual)
-            estado_api = "✅ VENTA AUTOMÁTICA EN BINANCE" if cantidad_comprada > 0 else "⚠️ ERROR AL VENDER EN BINANCE"
-            mensaje = f"🚨 ALERTA AUTO-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: SHORT 🔴\n{estado_api}\n\n📌 Entrada: {precio_actual}\n🎯 TP1: {tp1} | TP2: {tp2} | TP3: {tp3}\n🛑 SL Inicial: {sl}"
-            enviar_telegram(mensaje)
             
-            # EL FIX: Solo se queda vigilando si la orden se ejecutó correctamente
-            if cantidad_comprada > 0:
-                vigilar_operacion(simbolo, "SHORT", precio_actual, tp1, tp2, tp3, sl, cantidad_comprada)
+            mensaje = f"🚨 ALERTA PAPER-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: SHORT 🔴\n✅ Simulación Exitosa\n\n📌 Entrada: {precio_actual}\n🎯 TP1: {tp1} | TP2: {tp2} | TP3: {tp3}\n🛑 SL Inicial: {sl}"
+            enviar_telegram(mensaje)
+            vigilar_operacion(simbolo, "SHORT", precio_actual, tp1, tp2, tp3, sl, cantidad_comprada)
             return True
 
         return False
@@ -243,14 +203,14 @@ def analizar_mercado(simbolo):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot con Trailing Stop por Niveles (Testnet)...")
+print("🚀 Iniciando Bot en MODO SIMULADOR (Paper Trading)...")
 while True:
     try:
         top_monedas = obtener_top_monedas()
         for moneda in top_monedas:
             hubo_operacion = analizar_mercado(moneda)
             if hubo_operacion:
-                print("⏳ Pausa tras cerrar Auto-Trade (o fallo)...")
+                print("⏳ Pausa de 30 segundos tras cerrar simulación...")
                 time.sleep(30)
                 break
             time.sleep(5) 

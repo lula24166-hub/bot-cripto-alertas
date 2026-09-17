@@ -16,8 +16,8 @@ CHAT_ID = "-1003634379653"
 
 # --- CONFIGURACIÓN DE TRADING SIMULADO ---
 APALANCAMIENTO = 20
-INVERSION_USD = 20  # Dólares virtuales por cada compra (DCA usará otros $20)
-CANTIDAD_MONEDAS = 5
+INVERSION_USD = 20  
+CANTIDAD_MONEDAS = 20  # 🔥 MEJORA 3: Ahora cazamos en el Top 20 de Binance
 
 def enviar_telegram(mensaje):
     try:
@@ -34,7 +34,7 @@ def ejecutar_apertura(simbolo, direccion, precio_actual):
     return cantidad_monedas
 
 def ejecutar_cierre(simbolo, direccion, cantidad_final):
-    print(f"⚙️ SIMULADOR: Cerrando operación {direccion} en {simbolo}. Registrando ganancias...")
+    print(f"⚙️ SIMULADOR: Cerrando operación {direccion} en {simbolo}...")
 
 def obtener_top_monedas():
     try:
@@ -65,20 +65,31 @@ def obtener_datos(simbolo, intervalo, limite):
     except:
         return None
 
+# 🔥 MEJORA 1: EL PERMISO DEL REY (FILTRO BITCOIN) 🔥
+def obtener_estado_bitcoin():
+    try:
+        df_btc = obtener_datos("BTCUSDT", "1h", 100)
+        if df_btc is None or len(df_btc) < 20: return "NEUTRAL"
+        adx_ind = ADXIndicator(high=df_btc['maximo'], low=df_btc['minimo'], close=df_btc['cierre'], window=14)
+        adx, di_pos, di_neg = adx_ind.adx().iloc[-2], adx_ind.adx_pos().iloc[-2], adx_ind.adx_neg().iloc[-2]
+        
+        if adx > 20 and di_pos > di_neg: return "ALCISTA"
+        if adx > 20 and di_neg > di_pos: return "BAJISTA"
+        return "NEUTRAL"
+    except:
+        return "NEUTRAL"
+
 # --- EL VIGILANTE CON TRAILING STOP Y COMPENSACIÓN (DCA) ---
 def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_comprada):
-    print(f"👀 Bot Simulador vigilando {simbolo} (Estrategia DCA + 3 Fases)...")
-    
     precio_promedio = precio_entrada
     inversion_actual_usd = INVERSION_USD
     cantidad_total = cantidad_comprada
     dca_activado = False
     fase = 0
 
-    # Calcular niveles iniciales matemáticos
     if direccion == "LONG":
         sl_actual = precio_promedio - (atr_actual * 1.5)
-        precio_dca = precio_promedio - (atr_actual * 0.75) # Exactamente a mitad del SL
+        precio_dca = precio_promedio - (atr_actual * 0.75)
         tp1 = precio_promedio + (atr_actual * 1.5)
         tp2 = precio_promedio + (atr_actual * 3.0)
         tp3 = precio_promedio + (atr_actual * 4.5)
@@ -89,131 +100,85 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
         tp2 = precio_promedio - (atr_actual * 3.0)
         tp3 = precio_promedio - (atr_actual * 4.5)
 
-    # Mensaje inicial al abrir la operación
-    mensaje_inicial = f"🚨 ALERTA PAPER-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion} 🟢\n✅ Simulación Exitosa\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 Nivel de DCA (Rescate): {round(precio_dca,4)}"
+    mensaje_inicial = f"🚨 ALERTA PAPER-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 Nivel de DCA: {round(precio_dca,4)}"
     enviar_telegram(mensaje_inicial)
 
     while True:
         try:
             precio_actual = float(requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={simbolo}").json()['price'])
             
-            # --- LÓGICA PARA LONG 🟢 ---
             if direccion == "LONG":
                 roi = ((precio_actual - precio_promedio) / precio_promedio) * APALANCAMIENTO * 100
                 
-                # 1. LÓGICA DE COMPENSACIÓN (DCA) - Si el precio baja a mitad de camino del SL
                 if not dca_activado and precio_actual <= precio_dca and fase == 0:
                     dca_activado = True
-                    nueva_cantidad = ejecutar_apertura(simbolo, "LONG (Compensación)", precio_actual)
-                    cantidad_total += nueva_cantidad
+                    cantidad_total += ejecutar_apertura(simbolo, "LONG (Compensación)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
-                    
-                    # Calcular el nuevo promedio real
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
-                    
-                    # Recalcular TPs para salir rápido en ganancia
-                    tp1 = precio_promedio + (atr_actual * 1.5)
-                    tp2 = precio_promedio + (atr_actual * 3.0)
-                    tp3 = precio_promedio + (atr_actual * 4.5)
-                    # El SL inicial se mantiene igual para respetar la zona de riesgo
-                    
-                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📉 El precio bajó, inyectamos $20 virtuales más en {precio_actual}.\n\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
+                    tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 4.5)
+                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📉 Inyectamos $20 virtuales más en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
                     continue
 
-                # 2. LÓGICA DE TAKE PROFIT Y TRAILING STOP
                 if fase == 0 and precio_actual >= tp1:
-                    sl_actual = precio_promedio
-                    fase = 1
-                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Precio Promedio (Riesgo Cero).")
-                
+                    sl_actual, fase = precio_promedio, 1
+                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Riesgo Cero.")
                 elif fase == 1 and precio_actual >= tp2:
-                    sl_actual = tp1
-                    fase = 2
+                    sl_actual, fase = tp1, 2
                     enviar_telegram(f"🔥 SIMULADOR: {simbolo} alcanzó TP2 ({round(tp2,4)})\n💰 SL movido a TP1.")
-                
                 elif precio_actual >= tp3:
                     estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
                     break
-                
                 elif precio_actual <= sl_actual:
-                    if fase == 0:
-                        estado, emoji = "❌ STOP LOSS TOCADO ❌", "🛑"
-                    else:
-                        estado, emoji = "🛡 TRAILING STOP TOCADO (Salida Segura) 🛡", "✅"
+                    estado, emoji = ("❌ STOP LOSS TOCADO ❌", "🛑") if fase == 0 else ("🛡 TRAILING STOP TOCADO 🛡", "✅")
                     break
 
-            # --- LÓGICA PARA SHORT 🔴 ---
             elif direccion == "SHORT":
                 roi = ((precio_promedio - precio_actual) / precio_promedio) * APALANCAMIENTO * 100
                 
-                # 1. LÓGICA DE COMPENSACIÓN (DCA) - Si el precio sube en contra
                 if not dca_activado and precio_actual >= precio_dca and fase == 0:
                     dca_activado = True
-                    nueva_cantidad = ejecutar_apertura(simbolo, "SHORT (Compensación)", precio_actual)
-                    cantidad_total += nueva_cantidad
+                    cantidad_total += ejecutar_apertura(simbolo, "SHORT (Compensación)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
-                    
-                    # Calcular el nuevo promedio real
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
-                    
-                    # Recalcular TPs para salir rápido en ganancia
-                    tp1 = precio_promedio - (atr_actual * 1.5)
-                    tp2 = precio_promedio - (atr_actual * 3.0)
-                    tp3 = precio_promedio - (atr_actual * 4.5)
-                    
-                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📈 El precio subió, inyectamos $20 virtuales más en {precio_actual}.\n\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
+                    tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 4.5)
+                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📈 Inyectamos $20 virtuales más en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
                     continue
 
-                # 2. LÓGICA DE TAKE PROFIT Y TRAILING STOP
                 if fase == 0 and precio_actual <= tp1:
-                    sl_actual = precio_promedio
-                    fase = 1
-                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Precio Promedio (Riesgo Cero).")
-                
+                    sl_actual, fase = precio_promedio, 1
+                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Riesgo Cero.")
                 elif fase == 1 and precio_actual <= tp2:
-                    sl_actual = tp1
-                    fase = 2
+                    sl_actual, fase = tp1, 2
                     enviar_telegram(f"🔥 SIMULADOR: {simbolo} alcanzó TP2 ({round(tp2,4)})\n💰 SL movido a TP1.")
-                
                 elif precio_actual <= tp3:
                     estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
                     break
-                
                 elif precio_actual >= sl_actual:
-                    if fase == 0:
-                        estado, emoji = "❌ STOP LOSS TOCADO ❌", "🛑"
-                    else:
-                        estado, emoji = "🛡 TRAILING STOP TOCADO (Salida Segura) 🛡", "✅"
+                    estado, emoji = ("❌ STOP LOSS TOCADO ❌", "🛑") if fase == 0 else ("🛡 TRAILING STOP TOCADO 🛡", "✅")
                     break
 
             time.sleep(3)
         except Exception as e:
             time.sleep(3)
 
-    # 1. Cierre Simulado
     ejecutar_cierre(simbolo, direccion, cantidad_total)
     ganancia_usd = round(inversion_actual_usd * (roi / 100), 2)
-
-    # 2. Reporte Final (Calculando la ganancia sobre el total invertido)
-    mensaje = f"{estado}\n🤖 PAPER TRADING CERRADO: {simbolo}\n\n📈 PnL: {round(roi, 2)}%\n💵 Resultado Aprox: ${ganancia_usd} USD\nEntrada Promedio: {round(precio_promedio,4)} ➔ Precio Salida: {precio_actual}\n\n{emoji}"
+    mensaje = f"{estado}\n🤖 PAPER TRADING CERRADO: {simbolo}\n\n📈 PnL: {round(roi, 2)}%\n💵 Resultado Aprox: ${ganancia_usd} USD\nEntrada: {round(precio_promedio,4)} ➔ Salida: {precio_actual}\n\n{emoji}"
     enviar_telegram(mensaje)
-    print(f"✅ Auto-Trade Simulado finalizado.")
 
-def analizar_mercado(simbolo):
+def analizar_mercado(simbolo, estado_btc):
     try:
         df_4h = obtener_datos(simbolo, "4h", 100)
         if df_4h is None or len(df_4h) < 20: return False 
         adx_4h_ind = ADXIndicator(high=df_4h['maximo'], low=df_4h['minimo'], close=df_4h['cierre'], window=14)
         adx_4h, di_pos_4h, di_neg_4h = adx_4h_ind.adx().iloc[-2], adx_4h_ind.adx_pos().iloc[-2], adx_4h_ind.adx_neg().iloc[-2]
         tendencia_4h = "ALCISTA" if (adx_4h > 15 and di_pos_4h > di_neg_4h) else "BAJISTA" if (adx_4h > 15 and di_neg_4h > di_pos_4h) else "NEUTRAL"
-        time.sleep(1) 
         
         df_1h = obtener_datos(simbolo, "1h", 100)
         if df_1h is None or len(df_1h) < 20: return False
         adx_1h_ind = ADXIndicator(high=df_1h['maximo'], low=df_1h['minimo'], close=df_1h['cierre'], window=14)
         adx_1h, di_pos_1h, di_neg_1h = adx_1h_ind.adx().iloc[-2], adx_1h_ind.adx_pos().iloc[-2], adx_1h_ind.adx_neg().iloc[-2]
         tendencia_1h = "ALCISTA" if (adx_1h > 15 and di_pos_1h > di_neg_1h) else "BAJISTA" if (adx_1h > 15 and di_neg_1h > di_pos_1h) else "NEUTRAL"
-        time.sleep(1)
 
         df_5m = obtener_datos(simbolo, "5m", 100)
         if df_5m is None or len(df_5m) < 20: return False
@@ -228,12 +193,18 @@ def analizar_mercado(simbolo):
 
         # 🟢 GATILLO LONG
         if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 20 and di_pos_5m > di_neg_5m and rsi_5m > 50:
+            if estado_btc == "BAJISTA":
+                print(f"🚫 LONG cancelado en {simbolo}: El Rey Bitcoin está cayendo.")
+                return False
             cantidad_comprada = ejecutar_apertura(simbolo, "LONG", precio_actual)
             vigilar_operacion(simbolo, "LONG", precio_actual, atr_actual, cantidad_comprada)
             return True
 
         # 🔴 GATILLO SHORT
         elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 20 and di_neg_5m > di_pos_5m and rsi_5m < 50:
+            if estado_btc == "ALCISTA":
+                print(f"🚫 SHORT cancelado en {simbolo}: El Rey Bitcoin está subiendo fuerte.")
+                return False
             cantidad_comprada = ejecutar_apertura(simbolo, "SHORT", precio_actual)
             vigilar_operacion(simbolo, "SHORT", precio_actual, atr_actual, cantidad_comprada)
             return True
@@ -244,17 +215,22 @@ def analizar_mercado(simbolo):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot DCA PRO (Paper Trading)...")
+print("🚀 Iniciando Bot DCA PRO (20 Monedas + Filtro BTC)...")
 while True:
     try:
         top_monedas = obtener_top_monedas()
+        estado_btc = obtener_estado_bitcoin()
+        print(f"\n👑 ESTADO DEL REY BITCOIN (1H): {estado_btc}")
+        print("--------------------------------------------------")
+        
         for moneda in top_monedas:
-            hubo_operacion = analizar_mercado(moneda)
+            hubo_operacion = analizar_mercado(moneda, estado_btc)
             if hubo_operacion:
                 print("⏳ Pausa de 30 segundos tras cerrar simulación...")
                 time.sleep(30)
                 break
-            time.sleep(5) 
+            time.sleep(1) # Pequeña pausa para no saturar a Binance al revisar 20 monedas
+            
     except Exception as e:
         print(f"Error en bucle principal: {e}")
         time.sleep(10)

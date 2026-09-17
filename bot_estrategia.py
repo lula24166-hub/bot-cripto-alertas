@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import time
+from datetime import datetime
 from ta.trend import ADXIndicator
 from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
@@ -17,7 +18,14 @@ CHAT_ID = "-1003634379653"
 # --- CONFIGURACIÓN DE TRADING SIMULADO ---
 APALANCAMIENTO = 20
 INVERSION_USD = 20  
-CANTIDAD_MONEDAS = 20  # 🔥 MEJORA 3: Ahora cazamos en el Top 20 de Binance
+CANTIDAD_MONEDAS = 20  # Top 20 de Binance
+
+# --- ESTADÍSTICAS DIARIAS ---
+operaciones_totales = 0
+operaciones_ganadas = 0
+operaciones_perdidas = 0
+ganancia_diaria_usd = 0.0
+ultimo_dia_reporte = datetime.now().day
 
 def enviar_telegram(mensaje):
     try:
@@ -25,6 +33,30 @@ def enviar_telegram(mensaje):
         requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje})
     except:
         pass
+
+def enviar_reporte_diario():
+    global operaciones_totales, operaciones_ganadas, operaciones_perdidas, ganancia_diaria_usd
+    
+    if operaciones_totales > 0:
+        win_rate = round((operaciones_ganadas / operaciones_totales) * 100, 2)
+    else:
+        win_rate = 0.0
+        
+    mensaje = f"📊 CORTE DE CAJA DIARIO 📊\n\n" \
+              f"📈 Operaciones hoy: {operaciones_totales}\n" \
+              f"✅ Ganadas: {operaciones_ganadas}\n" \
+              f"❌ Perdidas: {operaciones_perdidas}\n" \
+              f"🎯 Win Rate: {win_rate}%\n\n" \
+              f"💵 Resultado Neto: ${round(ganancia_diaria_usd, 2)} USD\n\n" \
+              f"🤖 Reiniciando contadores para mañana..."
+    
+    enviar_telegram(mensaje)
+    
+    # Resetear pizarra para el nuevo día
+    operaciones_totales = 0
+    operaciones_ganadas = 0
+    operaciones_perdidas = 0
+    ganancia_diaria_usd = 0.0
 
 # --- FUNCIONES DE SIMULACIÓN (PAPER TRADING) ---
 def ejecutar_apertura(simbolo, direccion, precio_actual):
@@ -65,7 +97,6 @@ def obtener_datos(simbolo, intervalo, limite):
     except:
         return None
 
-# 🔥 MEJORA 1: EL PERMISO DEL REY (FILTRO BITCOIN) 🔥
 def obtener_estado_bitcoin():
     try:
         df_btc = obtener_datos("BTCUSDT", "1h", 100)
@@ -81,6 +112,8 @@ def obtener_estado_bitcoin():
 
 # --- EL VIGILANTE CON TRAILING STOP Y COMPENSACIÓN (DCA) ---
 def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_comprada):
+    global operaciones_totales, operaciones_ganadas, operaciones_perdidas, ganancia_diaria_usd
+    
     precio_promedio = precio_entrada
     inversion_actual_usd = INVERSION_USD
     cantidad_total = cantidad_comprada
@@ -163,6 +196,15 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
 
     ejecutar_cierre(simbolo, direccion, cantidad_total)
     ganancia_usd = round(inversion_actual_usd * (roi / 100), 2)
+    
+    # --- ACTUALIZAR LA ESTADÍSTICA INTERNA ---
+    operaciones_totales += 1
+    ganancia_diaria_usd += ganancia_usd
+    if ganancia_usd > 0:
+        operaciones_ganadas += 1
+    else:
+        operaciones_perdidas += 1
+
     mensaje = f"{estado}\n🤖 PAPER TRADING CERRADO: {simbolo}\n\n📈 PnL: {round(roi, 2)}%\n💵 Resultado Aprox: ${ganancia_usd} USD\nEntrada: {round(precio_promedio,4)} ➔ Salida: {precio_actual}\n\n{emoji}"
     enviar_telegram(mensaje)
 
@@ -215,9 +257,16 @@ def analizar_mercado(simbolo, estado_btc):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot DCA PRO (20 Monedas + Filtro BTC)...")
+print("🚀 Iniciando Bot DCA PRO (Con Reporte Diario)...")
 while True:
     try:
+        # Lógica para enviar el reporte diario a las 00:00 UTC (7:00 PM / 8:00 PM LatAm)
+        ahora = datetime.now()
+        
+        if ahora.hour == 0 and ahora.day != ultimo_dia_reporte:
+            enviar_reporte_diario()
+            ultimo_dia_reporte = ahora.day
+
         top_monedas = obtener_top_monedas()
         estado_btc = obtener_estado_bitcoin()
         print(f"\n👑 ESTADO DEL REY BITCOIN (1H): {estado_btc}")
@@ -229,7 +278,7 @@ while True:
                 print("⏳ Pausa de 30 segundos tras cerrar simulación...")
                 time.sleep(30)
                 break
-            time.sleep(1) # Pequeña pausa para no saturar a Binance al revisar 20 monedas
+            time.sleep(1) 
             
     except Exception as e:
         print(f"Error en bucle principal: {e}")

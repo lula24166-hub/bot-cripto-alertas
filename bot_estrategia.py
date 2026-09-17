@@ -52,13 +52,11 @@ def enviar_reporte_diario():
     
     enviar_telegram(mensaje)
     
-    # Resetear pizarra para el nuevo día
     operaciones_totales = 0
     operaciones_ganadas = 0
     operaciones_perdidas = 0
     ganancia_diaria_usd = 0.0
 
-# --- FUNCIONES DE SIMULACIÓN (PAPER TRADING) ---
 def ejecutar_apertura(simbolo, direccion, precio_actual):
     tamano_posicion_usd = INVERSION_USD * APALANCAMIENTO
     cantidad_monedas = tamano_posicion_usd / precio_actual
@@ -110,7 +108,6 @@ def obtener_estado_bitcoin():
     except:
         return "NEUTRAL"
 
-# --- EL VIGILANTE CON TRAILING STOP Y COMPENSACIÓN (DCA) ---
 def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_comprada):
     global operaciones_totales, operaciones_ganadas, operaciones_perdidas, ganancia_diaria_usd
     
@@ -120,20 +117,21 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
     dca_activado = False
     fase = 0
 
+    # 🔥 MODO DEFENSIVO: Stop Loss alejado a 2.0 ATR y DCA a 1.0 ATR
     if direccion == "LONG":
-        sl_actual = precio_promedio - (atr_actual * 1.5)
-        precio_dca = precio_promedio - (atr_actual * 0.75)
+        sl_actual = precio_promedio - (atr_actual * 2.0)
+        precio_dca = precio_promedio - (atr_actual * 1.0)
         tp1 = precio_promedio + (atr_actual * 1.5)
         tp2 = precio_promedio + (atr_actual * 3.0)
         tp3 = precio_promedio + (atr_actual * 4.5)
     else:
-        sl_actual = precio_promedio + (atr_actual * 1.5)
-        precio_dca = precio_promedio + (atr_actual * 0.75)
+        sl_actual = precio_promedio + (atr_actual * 2.0)
+        precio_dca = precio_promedio + (atr_actual * 1.0)
         tp1 = precio_promedio - (atr_actual * 1.5)
         tp2 = precio_promedio - (atr_actual * 3.0)
         tp3 = precio_promedio - (atr_actual * 4.5)
 
-    mensaje_inicial = f"🚨 ALERTA PAPER-TRADING 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 Nivel de DCA: {round(precio_dca,4)}"
+    mensaje_inicial = f"🚨 ALERTA PAPER-TRADING (DEFENSIVO) 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 Nivel de DCA: {round(precio_dca,4)}"
     enviar_telegram(mensaje_inicial)
 
     while True:
@@ -149,7 +147,7 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
                     tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 4.5)
-                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📉 Inyectamos $20 virtuales más en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
+                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📉 Inyectamos $20 virtuales en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
                     continue
 
                 if fase == 0 and precio_actual >= tp1:
@@ -174,7 +172,7 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
                     tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 4.5)
-                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📈 Inyectamos $20 virtuales más en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
+                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📈 Inyectamos $20 virtuales en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
                     continue
 
                 if fase == 0 and precio_actual <= tp1:
@@ -197,7 +195,6 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
     ejecutar_cierre(simbolo, direccion, cantidad_total)
     ganancia_usd = round(inversion_actual_usd * (roi / 100), 2)
     
-    # --- ACTUALIZAR LA ESTADÍSTICA INTERNA ---
     operaciones_totales += 1
     ganancia_diaria_usd += ganancia_usd
     if ganancia_usd > 0:
@@ -210,17 +207,18 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
 
 def analizar_mercado(simbolo, estado_btc):
     try:
+        # 🔥 MODO DEFENSIVO: Exigir ADX > 20 (tendencias más claras)
         df_4h = obtener_datos(simbolo, "4h", 100)
         if df_4h is None or len(df_4h) < 20: return False 
         adx_4h_ind = ADXIndicator(high=df_4h['maximo'], low=df_4h['minimo'], close=df_4h['cierre'], window=14)
         adx_4h, di_pos_4h, di_neg_4h = adx_4h_ind.adx().iloc[-2], adx_4h_ind.adx_pos().iloc[-2], adx_4h_ind.adx_neg().iloc[-2]
-        tendencia_4h = "ALCISTA" if (adx_4h > 15 and di_pos_4h > di_neg_4h) else "BAJISTA" if (adx_4h > 15 and di_neg_4h > di_pos_4h) else "NEUTRAL"
+        tendencia_4h = "ALCISTA" if (adx_4h > 20 and di_pos_4h > di_neg_4h) else "BAJISTA" if (adx_4h > 20 and di_neg_4h > di_pos_4h) else "NEUTRAL"
         
         df_1h = obtener_datos(simbolo, "1h", 100)
         if df_1h is None or len(df_1h) < 20: return False
         adx_1h_ind = ADXIndicator(high=df_1h['maximo'], low=df_1h['minimo'], close=df_1h['cierre'], window=14)
         adx_1h, di_pos_1h, di_neg_1h = adx_1h_ind.adx().iloc[-2], adx_1h_ind.adx_pos().iloc[-2], adx_1h_ind.adx_neg().iloc[-2]
-        tendencia_1h = "ALCISTA" if (adx_1h > 15 and di_pos_1h > di_neg_1h) else "BAJISTA" if (adx_1h > 15 and di_neg_1h > di_pos_1h) else "NEUTRAL"
+        tendencia_1h = "ALCISTA" if (adx_1h > 20 and di_pos_1h > di_neg_1h) else "BAJISTA" if (adx_1h > 20 and di_neg_1h > di_pos_1h) else "NEUTRAL"
 
         df_5m = obtener_datos(simbolo, "5m", 100)
         if df_5m is None or len(df_5m) < 20: return False
@@ -231,21 +229,17 @@ def analizar_mercado(simbolo, estado_btc):
         atr_ind = AverageTrueRange(high=df_5m['maximo'], low=df_5m['minimo'], close=df_5m['cierre'], window=14)
         atr_actual, precio_actual = atr_ind.average_true_range().iloc[-1], df_5m.iloc[-1]['cierre']
 
-        print(f"📊 {simbolo} | 4H: {tendencia_4h} | 1H: {tendencia_1h} | 5M: {round(adx_5m,1)}")
-
-        # 🟢 GATILLO LONG
-        if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 20 and di_pos_5m > di_neg_5m and rsi_5m > 50:
+        # 🟢 GATILLO LONG (Modo Defensivo: RSI < 70 para no comprar el techo)
+        if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 25 and di_pos_5m > di_neg_5m and (50 < rsi_5m < 70):
             if estado_btc == "BAJISTA":
-                print(f"🚫 LONG cancelado en {simbolo}: El Rey Bitcoin está cayendo.")
                 return False
             cantidad_comprada = ejecutar_apertura(simbolo, "LONG", precio_actual)
             vigilar_operacion(simbolo, "LONG", precio_actual, atr_actual, cantidad_comprada)
             return True
 
-        # 🔴 GATILLO SHORT
-        elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 20 and di_neg_5m > di_pos_5m and rsi_5m < 50:
+        # 🔴 GATILLO SHORT (Modo Defensivo: RSI > 30 para no vender el piso)
+        elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 25 and di_neg_5m > di_pos_5m and (30 < rsi_5m < 50):
             if estado_btc == "ALCISTA":
-                print(f"🚫 SHORT cancelado en {simbolo}: El Rey Bitcoin está subiendo fuerte.")
                 return False
             cantidad_comprada = ejecutar_apertura(simbolo, "SHORT", precio_actual)
             vigilar_operacion(simbolo, "SHORT", precio_actual, atr_actual, cantidad_comprada)
@@ -253,14 +247,12 @@ def analizar_mercado(simbolo, estado_btc):
 
         return False
     except Exception as e:
-        print(f"Error analizando {simbolo}: {e}")
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot DCA PRO (Con Reporte Diario)...")
+print("🚀 Iniciando Bot DCA PRO (Modo Defensivo Activado)...")
 while True:
     try:
-        # Lógica para enviar el reporte diario a las 00:00 UTC (7:00 PM / 8:00 PM LatAm)
         ahora = datetime.now()
         
         if ahora.hour == 0 and ahora.day != ultimo_dia_reporte:
@@ -281,5 +273,4 @@ while True:
             time.sleep(1) 
             
     except Exception as e:
-        print(f"Error en bucle principal: {e}")
         time.sleep(10)

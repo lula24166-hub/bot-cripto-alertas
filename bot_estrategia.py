@@ -18,7 +18,7 @@ CHAT_ID = "-1003634379653"
 # --- CONFIGURACIÓN DE TRADING SIMULADO ---
 APALANCAMIENTO = 20
 INVERSION_USD = 20  
-CANTIDAD_MONEDAS = 20  # Top 20 de Binance
+CANTIDAD_MONEDAS = 12  # 🔥 GRANDES LIGAS: Solo las 12 monedas más fuertes
 
 # --- ESTADÍSTICAS DIARIAS ---
 operaciones_totales = 0
@@ -73,9 +73,14 @@ def obtener_top_monedas():
         mercados = [m for m in respuesta if m['symbol'].endswith('USDT')]
         mercados_ordenados = sorted(mercados, key=lambda x: float(x['quoteVolume']), reverse=True)
         top_monedas = []
+        
+        # 🔥 LISTA NEGRA: Prohibido operar monedas basura, inestables o estables
+        lista_negra = ["USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "EURUSDT", "GUSDT", "TRBUSDT", "PEPEUSDT", "WIFUSDT", "FLOKIUSDT", "BONKUSDT", "SHIBUSDT", "BOMEUSDT", "NOTUSDT"]
+        
         for m in mercados_ordenados:
-            if m['symbol'] not in ['USDCUSDT', 'FDUSDUSDT']:
-                top_monedas.append(m['symbol'])
+            simbolo = m['symbol']
+            if simbolo not in lista_negra and not simbolo.startswith('1000'):
+                top_monedas.append(simbolo)
             if len(top_monedas) == CANTIDAD_MONEDAS:
                 break
         return top_monedas
@@ -117,7 +122,6 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
     dca_activado = False
     fase = 0
 
-    # 🔥 MODO DEFENSIVO: Stop Loss alejado a 2.0 ATR y DCA a 1.0 ATR
     if direccion == "LONG":
         sl_actual = precio_promedio - (atr_actual * 2.0)
         precio_dca = precio_promedio - (atr_actual * 1.0)
@@ -131,7 +135,7 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
         tp2 = precio_promedio - (atr_actual * 3.0)
         tp3 = precio_promedio - (atr_actual * 4.5)
 
-    mensaje_inicial = f"🚨 ALERTA PAPER-TRADING (DEFENSIVO) 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 Nivel de DCA: {round(precio_dca,4)}"
+    mensaje_inicial = f"🚨 ALERTA GRANDES LIGAS 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 Nivel de DCA: {round(precio_dca,4)}"
     enviar_telegram(mensaje_inicial)
 
     while True:
@@ -207,7 +211,6 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
 
 def analizar_mercado(simbolo, estado_btc):
     try:
-        # 🔥 MODO DEFENSIVO: Exigir ADX > 20 (tendencias más claras)
         df_4h = obtener_datos(simbolo, "4h", 100)
         if df_4h is None or len(df_4h) < 20: return False 
         adx_4h_ind = ADXIndicator(high=df_4h['maximo'], low=df_4h['minimo'], close=df_4h['cierre'], window=14)
@@ -229,7 +232,6 @@ def analizar_mercado(simbolo, estado_btc):
         atr_ind = AverageTrueRange(high=df_5m['maximo'], low=df_5m['minimo'], close=df_5m['cierre'], window=14)
         atr_actual, precio_actual = atr_ind.average_true_range().iloc[-1], df_5m.iloc[-1]['cierre']
 
-        # 🟢 GATILLO LONG (Modo Defensivo: RSI < 70 para no comprar el techo)
         if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 25 and di_pos_5m > di_neg_5m and (50 < rsi_5m < 70):
             if estado_btc == "BAJISTA":
                 return False
@@ -237,7 +239,6 @@ def analizar_mercado(simbolo, estado_btc):
             vigilar_operacion(simbolo, "LONG", precio_actual, atr_actual, cantidad_comprada)
             return True
 
-        # 🔴 GATILLO SHORT (Modo Defensivo: RSI > 30 para no vender el piso)
         elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 25 and di_neg_5m > di_pos_5m and (30 < rsi_5m < 50):
             if estado_btc == "ALCISTA":
                 return False
@@ -250,7 +251,7 @@ def analizar_mercado(simbolo, estado_btc):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot DCA PRO (Modo Defensivo Activado)...")
+print("🚀 Iniciando Bot DCA PRO (GRANDES LIGAS)...")
 while True:
     try:
         ahora = datetime.now()

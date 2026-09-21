@@ -18,7 +18,7 @@ CHAT_ID = "-1003634379653"
 # --- CONFIGURACIÓN DE TRADING SIMULADO ---
 APALANCAMIENTO = 10  
 INVERSION_USD = 20  
-CANTIDAD_MONEDAS = 12  # Grandes Ligas
+CANTIDAD_MONEDAS = 12  
 
 # --- ESTADÍSTICAS DIARIAS ---
 operaciones_totales = 0
@@ -84,6 +84,7 @@ def obtener_datos(simbolo, intervalo, limite):
         df['cierre'] = df['cierre'].astype(float)
         df['maximo'] = df['maximo'].astype(float)
         df['minimo'] = df['minimo'].astype(float)
+        df['volumen'] = df['volumen'].astype(float)
         return df
     except:
         return None
@@ -116,16 +117,16 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
         precio_dca2 = precio_entrada - (atr_actual * 2.0)
         tp1 = precio_promedio + (atr_actual * 1.5)
         tp2 = precio_promedio + (atr_actual * 3.0)
-        tp3 = precio_promedio + (atr_actual * 4.5)
+        tp3 = precio_promedio + (atr_actual * 6.0) # TP3 más lejos para dejar correr el Trailing
     else:
         sl_actual = precio_entrada + (atr_actual * 3.0)
         precio_dca1 = precio_entrada + (atr_actual * 1.0)
         precio_dca2 = precio_entrada + (atr_actual * 2.0)
         tp1 = precio_promedio - (atr_actual * 1.5)
         tp2 = precio_promedio - (atr_actual * 3.0)
-        tp3 = precio_promedio - (atr_actual * 4.5)
+        tp3 = precio_promedio - (atr_actual * 6.0)
 
-    mensaje_inicial = f"🚨 ALERTA 10X (DOBLE DCA) 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 DCA 1: {round(precio_dca1,4)} | DCA 2: {round(precio_dca2,4)}"
+    mensaje_inicial = f"🚨 ALERTA INSTITUCIONAL 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Volumen Ballena: Detectado\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1 (Activa Trailing): {round(tp1,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 DCA 1: {round(precio_dca1,4)} | DCA 2: {round(precio_dca2,4)}"
     enviar_telegram(mensaje_inicial)
 
     while True:
@@ -135,13 +136,14 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
             if direccion == "LONG":
                 roi = ((precio_actual - precio_promedio) / precio_promedio) * APALANCAMIENTO * 100
                 
+                # --- COMPENSACIONES DCA ---
                 if not dca1_activado and precio_actual <= precio_dca1 and fase == 0:
                     dca1_activado = True
                     cantidad_total += ejecutar_apertura(simbolo, "LONG (Compensación 1)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
-                    tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 4.5)
-                    enviar_telegram(f"⚠️ COMPENSACIÓN 1 ACTIVADA en #{simbolo} ⚠️\n\n📉 Inyectamos $20 en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
+                    tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 6.0)
+                    enviar_telegram(f"⚠️ COMPENSACIÓN 1 ACTIVADA en #{simbolo} ⚠️\n\n📉 Inyectamos $20 en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevo TP1: {round(tp1,4)}")
                     continue
 
                 if dca1_activado and not dca2_activado and precio_actual <= precio_dca2 and fase == 0:
@@ -149,21 +151,29 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
                     cantidad_total += ejecutar_apertura(simbolo, "LONG (Compensación 2)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
-                    tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 4.5)
-                    enviar_telegram(f"🆘 COMPENSACIÓN 2 (ÚLTIMA) en #{simbolo} 🆘\n\n📉 Inyectamos otros $20 en {precio_actual}.\n📊 Promedio Final: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
+                    tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 6.0)
+                    enviar_telegram(f"🆘 COMPENSACIÓN 2 (ÚLTIMA) en #{simbolo} 🆘\n\n📉 Inyectamos otros $20 en {precio_actual}.\n📊 Promedio Final: {round(precio_promedio,4)}\n🎯 Nuevo TP1: {round(tp1,4)}")
                     continue
 
-                # 🔥 ACTUALIZACIÓN BREAK-EVEN PLUS (Asegurando ganancias)
+                # --- LÓGICA DE FASES Y TRAILING FLUIDO ---
                 if fase == 0 and precio_actual >= tp1:
                     sl_actual, fase = precio_promedio + (atr_actual * 0.3), 1
-                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Ganancia Asegurada.")
+                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Ganancia Asegurada.\n🌊 Trailing Fluido Activado.")
                 elif fase == 1 and precio_actual >= tp2:
-                    sl_actual, fase = tp1, 2
-                    enviar_telegram(f"🔥 SIMULADOR: {simbolo} alcanzó TP2 ({round(tp2,4)})\n💰 SL movido a TP1.")
+                    fase = 2
+                    enviar_telegram(f"🔥 SIMULADOR: {simbolo} rompió TP2 ({round(tp2,4)})\n🚀 Trailing Dinámico persiguiendo el precio.")
                 elif precio_actual >= tp3:
                     estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
                     break
-                elif precio_actual <= sl_actual:
+                
+                # 🔥 ACTUALIZACIÓN TRAILING FLUIDO CONSTANTE
+                if fase >= 1:
+                    nuevo_sl = precio_actual - (atr_actual * 1.5)
+                    if nuevo_sl > sl_actual:
+                        sl_actual = nuevo_sl # El Stop Loss persigue al precio hacia arriba
+
+                # --- CIERRE POR STOP LOSS O TRAILING ---
+                if precio_actual <= sl_actual:
                     estado, emoji = ("❌ STOP LOSS TOCADO ❌", "🛑") if fase == 0 else ("🛡 TRAILING STOP TOCADO 🛡", "✅")
                     break
 
@@ -175,8 +185,8 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
                     cantidad_total += ejecutar_apertura(simbolo, "SHORT (Compensación 1)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
-                    tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 4.5)
-                    enviar_telegram(f"⚠️ COMPENSACIÓN 1 ACTIVADA en #{simbolo} ⚠️\n\n📈 Inyectamos $20 en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
+                    tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 6.0)
+                    enviar_telegram(f"⚠️ COMPENSACIÓN 1 ACTIVADA en #{simbolo} ⚠️\n\n📈 Inyectamos $20 en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevo TP1: {round(tp1,4)}")
                     continue
 
                 if dca1_activado and not dca2_activado and precio_actual >= precio_dca2 and fase == 0:
@@ -184,21 +194,27 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
                     cantidad_total += ejecutar_apertura(simbolo, "SHORT (Compensación 2)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
-                    tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 4.5)
-                    enviar_telegram(f"🆘 COMPENSACIÓN 2 (ÚLTIMA) en #{simbolo} 🆘\n\n📈 Inyectamos otros $20 en {precio_actual}.\n📊 Promedio Final: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
+                    tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 6.0)
+                    enviar_telegram(f"🆘 COMPENSACIÓN 2 (ÚLTIMA) en #{simbolo} 🆘\n\n📈 Inyectamos otros $20 en {precio_actual}.\n📊 Promedio Final: {round(precio_promedio,4)}\n🎯 Nuevo TP1: {round(tp1,4)}")
                     continue
 
-                # 🔥 ACTUALIZACIÓN BREAK-EVEN PLUS (Asegurando ganancias)
                 if fase == 0 and precio_actual <= tp1:
                     sl_actual, fase = precio_promedio - (atr_actual * 0.3), 1
-                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Ganancia Asegurada.")
+                    enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Ganancia Asegurada.\n🌊 Trailing Fluido Activado.")
                 elif fase == 1 and precio_actual <= tp2:
-                    sl_actual, fase = tp1, 2
-                    enviar_telegram(f"🔥 SIMULADOR: {simbolo} alcanzó TP2 ({round(tp2,4)})\n💰 SL movido a TP1.")
+                    fase = 2
+                    enviar_telegram(f"🔥 SIMULADOR: {simbolo} rompió TP2 ({round(tp2,4)})\n🚀 Trailing Dinámico persiguiendo el precio.")
                 elif precio_actual <= tp3:
                     estado, emoji = "💥 TAKE PROFIT FINAL ALCANZADO 💥", "🎯🏆"
                     break
-                elif precio_actual >= sl_actual:
+                
+                # 🔥 ACTUALIZACIÓN TRAILING FLUIDO CONSTANTE
+                if fase >= 1:
+                    nuevo_sl = precio_actual + (atr_actual * 1.5)
+                    if nuevo_sl < sl_actual:
+                        sl_actual = nuevo_sl # El Stop Loss persigue al precio hacia abajo
+
+                if precio_actual >= sl_actual:
                     estado, emoji = ("❌ STOP LOSS TOCADO ❌", "🛑") if fase == 0 else ("🛡 TRAILING STOP TOCADO 🛡", "✅")
                     break
 
@@ -242,14 +258,20 @@ def analizar_mercado(simbolo, estado_btc):
         atr_ind = AverageTrueRange(high=df_5m['maximo'], low=df_5m['minimo'], close=df_5m['cierre'], window=14)
         atr_actual, precio_actual = atr_ind.average_true_range().iloc[-1], df_5m.iloc[-1]['cierre']
 
-        if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 25 and di_pos_5m > di_neg_5m and (50 < rsi_5m < 70):
+        # 🔥 MÓDULO DE VOLUMEN INSTITUCIONAL
+        volumen_promedio = df_5m['volumen'].rolling(window=20).mean().iloc[-2]
+        volumen_actual = df_5m['volumen'].iloc[-2]
+        filtro_volumen = volumen_actual > volumen_promedio # Exige que el volumen supere la media reciente
+
+        # Se agrega el filtro de volumen a los gatillos
+        if tendencia_4h == "ALCISTA" and tendencia_1h == "ALCISTA" and adx_5m > 25 and di_pos_5m > di_neg_5m and (50 < rsi_5m < 70) and filtro_volumen:
             if estado_btc == "BAJISTA":
                 return False
             cantidad_comprada = ejecutar_apertura(simbolo, "LONG", precio_actual)
             vigilar_operacion(simbolo, "LONG", precio_actual, atr_actual, cantidad_comprada)
             return True
 
-        elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 25 and di_neg_5m > di_pos_5m and (30 < rsi_5m < 50):
+        elif tendencia_4h == "BAJISTA" and tendencia_1h == "BAJISTA" and adx_5m > 25 and di_neg_5m > di_pos_5m and (30 < rsi_5m < 50) and filtro_volumen:
             if estado_btc == "ALCISTA":
                 return False
             cantidad_comprada = ejecutar_apertura(simbolo, "SHORT", precio_actual)
@@ -261,7 +283,7 @@ def analizar_mercado(simbolo, estado_btc):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot DCA PRO (DOBLE ESCUDO 10X + Break Even Plus)...")
+print("🚀 Iniciando Bot DCA PRO (Trailing Fluido + Filtro Volumen)...")
 while True:
     try:
         ahora = datetime.now()

@@ -18,8 +18,8 @@ CHAT_ID = "-1003634379653"
 # --- CONEXIÓN BYBIT TESTNET (V5) ---
 from pybit.unified_trading import HTTP
 
-BYBIT_API_KEY = "OQnc2BQViHZDx9jDbt"
-BYBIT_API_SECRET = "DeAql4WjU8Jpz5HgIPoJ2oqynQFwHlTwhH2X"
+BYBIT_API_KEY = "DdGGlBKxD7CQYgxWBm"
+BYBIT_API_SECRET = "5Fkbi4DpzRBT1526pivIrK5DH2XnWfzRI99r"
 
 try:
     session = HTTP(

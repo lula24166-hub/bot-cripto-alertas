@@ -92,14 +92,16 @@ def ejecutar_apertura(simbolo, direccion, precio_actual):
         )
         print(f"✅ BYBIT: Orden {side} ejecutada en {simbolo}. Cantidad: {cantidad_monedas}")
     except Exception as e:
-        print(f"❌ Error BYBIT al abrir {simbolo}: {e}")
+        error_msg = str(e)
+        print(f"❌ Error BYBIT al abrir {simbolo}: {error_msg}")
+        enviar_telegram(f"⚠️ ERROR BYBIT AL ABRIR {simbolo} ⚠️\n\nMotivo del Exchange:\n{error_msg}\n\n👉 Revisa que tengas fondos USDT en tu cuenta 'Derivados' de Testnet o chequea los permisos de la API Key.")
         
     return cantidad_monedas
 
 def ejecutar_cierre(simbolo, direccion, cantidad_final):
     decimales = obtener_precision_bybit(simbolo)
     cantidad_str = str(round(cantidad_final, decimales))
-    side = "Sell" if "LONG" in direccion else "Buy" # Dirección opuesta para cerrar
+    side = "Sell" if "LONG" in direccion else "Buy" 
     
     try:
         session.place_order(
@@ -108,11 +110,13 @@ def ejecutar_cierre(simbolo, direccion, cantidad_final):
             side=side,
             orderType="Market",
             qty=cantidad_str,
-            reduceOnly=True # Escudo profesional: Solo permite cerrar, jamás abrir por error
+            reduceOnly=True 
         )
         print(f"✅ BYBIT: Operación CERRADA en {simbolo}.")
     except Exception as e:
-        print(f"❌ Error BYBIT al cerrar {simbolo}: {e}")
+        error_msg = str(e)
+        print(f"❌ Error BYBIT al cerrar {simbolo}: {error_msg}")
+        enviar_telegram(f"⚠️ ERROR BYBIT AL CERRAR {simbolo} ⚠️\n\nMotivo del Exchange:\n{error_msg}")
 
 # --- MOTOR DE DATOS (BINANCE) ---
 def obtener_top_monedas():

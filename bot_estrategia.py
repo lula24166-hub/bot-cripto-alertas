@@ -16,9 +16,9 @@ TOKEN = "8624275801:AAHIyiTiofLOZJdZfhwww58kx88m940_l9c"
 CHAT_ID = "-1003634379653"
 
 # --- CONFIGURACIÓN DE TRADING SIMULADO ---
-APALANCAMIENTO = 20
+APALANCAMIENTO = 10  # 🔥 BAJAMOS A 10X PARA SOBREVIVIR VOLATILIDAD
 INVERSION_USD = 20  
-CANTIDAD_MONEDAS = 12  # 🔥 GRANDES LIGAS: Solo las 12 monedas más fuertes
+CANTIDAD_MONEDAS = 12  # Grandes Ligas (Top 12)
 
 # --- ESTADÍSTICAS DIARIAS ---
 operaciones_totales = 0
@@ -36,26 +36,15 @@ def enviar_telegram(mensaje):
 
 def enviar_reporte_diario():
     global operaciones_totales, operaciones_ganadas, operaciones_perdidas, ganancia_diaria_usd
-    
     if operaciones_totales > 0:
         win_rate = round((operaciones_ganadas / operaciones_totales) * 100, 2)
     else:
         win_rate = 0.0
         
-    mensaje = f"📊 CORTE DE CAJA DIARIO 📊\n\n" \
-              f"📈 Operaciones hoy: {operaciones_totales}\n" \
-              f"✅ Ganadas: {operaciones_ganadas}\n" \
-              f"❌ Perdidas: {operaciones_perdidas}\n" \
-              f"🎯 Win Rate: {win_rate}%\n\n" \
-              f"💵 Resultado Neto: ${round(ganancia_diaria_usd, 2)} USD\n\n" \
-              f"🤖 Reiniciando contadores para mañana..."
-    
+    mensaje = f"📊 CORTE DE CAJA DIARIO 📊\n\n📈 Operaciones hoy: {operaciones_totales}\n✅ Ganadas: {operaciones_ganadas}\n❌ Perdidas: {operaciones_perdidas}\n🎯 Win Rate: {win_rate}%\n\n💵 Resultado Neto: ${round(ganancia_diaria_usd, 2)} USD\n\n🤖 Reiniciando contadores para mañana..."
     enviar_telegram(mensaje)
     
-    operaciones_totales = 0
-    operaciones_ganadas = 0
-    operaciones_perdidas = 0
-    ganancia_diaria_usd = 0.0
+    operaciones_totales, operaciones_ganadas, operaciones_perdidas, ganancia_diaria_usd = 0, 0, 0, 0.0
 
 def ejecutar_apertura(simbolo, direccion, precio_actual):
     tamano_posicion_usd = INVERSION_USD * APALANCAMIENTO
@@ -74,8 +63,8 @@ def obtener_top_monedas():
         mercados_ordenados = sorted(mercados, key=lambda x: float(x['quoteVolume']), reverse=True)
         top_monedas = []
         
-        # 🔥 LISTA NEGRA: Prohibido operar monedas basura, inestables o estables
-        lista_negra = ["USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "EURUSDT", "GUSDT", "TRBUSDT", "PEPEUSDT", "WIFUSDT", "FLOKIUSDT", "BONKUSDT", "SHIBUSDT", "BOMEUSDT", "NOTUSDT"]
+        # 🔥 LISTA NEGRA AMPLIADA: Cero shitcoins, cero monedas estables (RLUSD, USDE, etc.)
+        lista_negra = ["USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "EURUSDT", "GUSDT", "TRBUSDT", "PEPEUSDT", "WIFUSDT", "FLOKIUSDT", "BONKUSDT", "SHIBUSDT", "BOMEUSDT", "NOTUSDT", "RLUSDUSDT", "USDEUSDT", "USDDUSDT", "USDPUSDT"]
         
         for m in mercados_ordenados:
             simbolo = m['symbol']
@@ -106,7 +95,6 @@ def obtener_estado_bitcoin():
         if df_btc is None or len(df_btc) < 20: return "NEUTRAL"
         adx_ind = ADXIndicator(high=df_btc['maximo'], low=df_btc['minimo'], close=df_btc['cierre'], window=14)
         adx, di_pos, di_neg = adx_ind.adx().iloc[-2], adx_ind.adx_pos().iloc[-2], adx_ind.adx_neg().iloc[-2]
-        
         if adx > 20 and di_pos > di_neg: return "ALCISTA"
         if adx > 20 and di_neg > di_pos: return "BAJISTA"
         return "NEUTRAL"
@@ -119,23 +107,27 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
     precio_promedio = precio_entrada
     inversion_actual_usd = INVERSION_USD
     cantidad_total = cantidad_comprada
-    dca_activado = False
+    dca1_activado = False
+    dca2_activado = False
     fase = 0
 
+    # 🔥 NUEVA MATEMÁTICA 10x: SL a 3 ATR, DCA1 a 1 ATR, DCA2 a 2 ATR
     if direccion == "LONG":
-        sl_actual = precio_promedio - (atr_actual * 2.0)
-        precio_dca = precio_promedio - (atr_actual * 1.0)
+        sl_actual = precio_entrada - (atr_actual * 3.0)
+        precio_dca1 = precio_entrada - (atr_actual * 1.0)
+        precio_dca2 = precio_entrada - (atr_actual * 2.0)
         tp1 = precio_promedio + (atr_actual * 1.5)
         tp2 = precio_promedio + (atr_actual * 3.0)
         tp3 = precio_promedio + (atr_actual * 4.5)
     else:
-        sl_actual = precio_promedio + (atr_actual * 2.0)
-        precio_dca = precio_promedio + (atr_actual * 1.0)
+        sl_actual = precio_entrada + (atr_actual * 3.0)
+        precio_dca1 = precio_entrada + (atr_actual * 1.0)
+        precio_dca2 = precio_entrada + (atr_actual * 2.0)
         tp1 = precio_promedio - (atr_actual * 1.5)
         tp2 = precio_promedio - (atr_actual * 3.0)
         tp3 = precio_promedio - (atr_actual * 4.5)
 
-    mensaje_inicial = f"🚨 ALERTA GRANDES LIGAS 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 Nivel de DCA: {round(precio_dca,4)}"
+    mensaje_inicial = f"🚨 ALERTA 10X (DOBLE DCA) 🚨\n\nMoneda: #{simbolo}\nDirección: {direccion}\n✅ Simulación Exitosa\n👑 Filtro BTC: Aprobado\n\n📌 Entrada: {precio_promedio}\n🎯 TP1: {round(tp1,4)} | TP2: {round(tp2,4)} | TP3: {round(tp3,4)}\n🛑 SL Inicial: {round(sl_actual,4)}\n🛡 DCA 1: {round(precio_dca1,4)} | DCA 2: {round(precio_dca2,4)}"
     enviar_telegram(mensaje_inicial)
 
     while True:
@@ -145,15 +137,27 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
             if direccion == "LONG":
                 roi = ((precio_actual - precio_promedio) / precio_promedio) * APALANCAMIENTO * 100
                 
-                if not dca_activado and precio_actual <= precio_dca and fase == 0:
-                    dca_activado = True
-                    cantidad_total += ejecutar_apertura(simbolo, "LONG (Compensación)", precio_actual)
+                # --- COMPENSACIÓN 1 ---
+                if not dca1_activado and precio_actual <= precio_dca1 and fase == 0:
+                    dca1_activado = True
+                    cantidad_total += ejecutar_apertura(simbolo, "LONG (Compensación 1)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
                     tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 4.5)
-                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📉 Inyectamos $20 virtuales en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
+                    enviar_telegram(f"⚠️ COMPENSACIÓN 1 ACTIVADA en #{simbolo} ⚠️\n\n📉 Inyectamos $20 en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
                     continue
 
+                # --- COMPENSACIÓN 2 ---
+                if dca1_activado and not dca2_activado and precio_actual <= precio_dca2 and fase == 0:
+                    dca2_activado = True
+                    cantidad_total += ejecutar_apertura(simbolo, "LONG (Compensación 2)", precio_actual)
+                    inversion_actual_usd += INVERSION_USD
+                    precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
+                    tp1, tp2, tp3 = precio_promedio + (atr_actual * 1.5), precio_promedio + (atr_actual * 3.0), precio_promedio + (atr_actual * 4.5)
+                    enviar_telegram(f"🆘 COMPENSACIÓN 2 (ÚLTIMA) en #{simbolo} 🆘\n\n📉 Inyectamos otros $20 en {precio_actual}.\n📊 Promedio Final: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
+                    continue
+
+                # --- TAKE PROFIT Y STOP LOSS ---
                 if fase == 0 and precio_actual >= tp1:
                     sl_actual, fase = precio_promedio, 1
                     enviar_telegram(f"✅ SIMULADOR: {simbolo} alcanzó TP1 ({round(tp1,4)})\n🛡 SL movido a Riesgo Cero.")
@@ -170,13 +174,22 @@ def vigilar_operacion(simbolo, direccion, precio_entrada, atr_actual, cantidad_c
             elif direccion == "SHORT":
                 roi = ((precio_promedio - precio_actual) / precio_promedio) * APALANCAMIENTO * 100
                 
-                if not dca_activado and precio_actual >= precio_dca and fase == 0:
-                    dca_activado = True
-                    cantidad_total += ejecutar_apertura(simbolo, "SHORT (Compensación)", precio_actual)
+                if not dca1_activado and precio_actual >= precio_dca1 and fase == 0:
+                    dca1_activado = True
+                    cantidad_total += ejecutar_apertura(simbolo, "SHORT (Compensación 1)", precio_actual)
                     inversion_actual_usd += INVERSION_USD
                     precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
                     tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 4.5)
-                    enviar_telegram(f"⚠️ COMPENSACIÓN ACTIVADA en #{simbolo} ⚠️\n\n📈 Inyectamos $20 virtuales en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 Nuevos TPs: {round(tp1,4)} | {round(tp2,4)} | {round(tp3,4)}")
+                    enviar_telegram(f"⚠️ COMPENSACIÓN 1 ACTIVADA en #{simbolo} ⚠️\n\n📈 Inyectamos $20 en {precio_actual}.\n📊 Nuevo Promedio: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
+                    continue
+
+                if dca1_activado and not dca2_activado and precio_actual >= precio_dca2 and fase == 0:
+                    dca2_activado = True
+                    cantidad_total += ejecutar_apertura(simbolo, "SHORT (Compensación 2)", precio_actual)
+                    inversion_actual_usd += INVERSION_USD
+                    precio_promedio = (inversion_actual_usd * APALANCAMIENTO) / cantidad_total
+                    tp1, tp2, tp3 = precio_promedio - (atr_actual * 1.5), precio_promedio - (atr_actual * 3.0), precio_promedio - (atr_actual * 4.5)
+                    enviar_telegram(f"🆘 COMPENSACIÓN 2 (ÚLTIMA) en #{simbolo} 🆘\n\n📈 Inyectamos otros $20 en {precio_actual}.\n📊 Promedio Final: {round(precio_promedio,4)}\n🎯 TPs: {round(tp1,4)} | {round(tp2,4)}")
                     continue
 
                 if fase == 0 and precio_actual <= tp1:
@@ -251,11 +264,10 @@ def analizar_mercado(simbolo, estado_btc):
         return False
 
 # --- BUCLE PRINCIPAL ---
-print("🚀 Iniciando Bot DCA PRO (GRANDES LIGAS)...")
+print("🚀 Iniciando Bot DCA PRO (DOBLE ESCUDO 10X)...")
 while True:
     try:
         ahora = datetime.now()
-        
         if ahora.hour == 0 and ahora.day != ultimo_dia_reporte:
             enviar_reporte_diario()
             ultimo_dia_reporte = ahora.day
